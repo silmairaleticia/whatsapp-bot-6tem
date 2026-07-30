@@ -136,12 +136,10 @@ function inboxAuth(req, res, next) {
     }
   }
 
-  res.set('WWW-Authenticate', 'Basic realm="Caixa de entrada 6Tem"');
-  return res.status(401).send('Autenticação necessária.');
+  return res.status(401).send('Autenticacao necessaria.');
 }
 
-// TEMP DIAGNOSTIC: auth desativada para testar se o problema é a própria rota /inbox
-// app.use('/inbox', inboxAuth);
+app.use('/inbox', inboxAuth);
 
 function escapeHtml(str = '') {
   return str
