@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT } from './knowledgeBase.js';
 import {
@@ -120,26 +121,9 @@ async function sendWhatsAppMessage(to, body) {
 
 // ───────────────────────── CAIXA DE ENTRADA (painel manual) ─────────────────────────
 // Protegida por usuário/senha (defina INBOX_USER e INBOX_PASSWORD no .env).
-
-function inboxAuth(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const [scheme, encoded] = authHeader.split(' ');
-
-  if (scheme === 'Basic' && encoded) {
-    const decoded = Buffer.from(encoded, 'base64').toString('utf-8');
-    const sepIndex = decoded.indexOf(':');
-    const user = decoded.slice(0, sepIndex);
-    const pass = decoded.slice(sepIndex + 1);
-
-    if (user === INBOX_USER && pass === INBOX_PASSWORD) {
-      return next();
-    }
-  }
-
-  return res.status(401).send('Autenticacao necessaria.');
-}
-
-app.use('/inbox', inboxAuth);
+// Observação: usamos login via formulário + cookie em vez de HTTP Basic Auth
+// porque o header "WWW-Authenticate" (usado no desafio do Basic Auth) fazia o
+// proxy do Render responder 503 nesta rota especificamente.
 
 function escapeHtml(str = '') {
   return str
@@ -178,6 +162,62 @@ ${bodyHtml}
 </body>
 </html>`;
 }
+
+// ── Login por formulário + cookie (sem WWW-Authenticate) ──
+
+const COOKIE_NAME = 'inbox_session';
+const INBOX_TOKEN = crypto.createHash('sha256').update(`${INBOX_USER}:${INBOX_PASSWORD}`).digest('hex');
+
+function getCookie(req, name) {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    if (key === name) return decodeURIComponent(part.slice(idx + 1).trim());
+  }
+  return null;
+}
+
+app.get('/inbox/login', (_req, res) => {
+  res.send(
+    layout(
+      'Entrar — Caixa de entrada 6Tem',
+      `<h1>Entrar</h1>
+      <form method="POST" action="/inbox/login">
+        <input type="text" name="user" placeholder="Usuário" required style="display:block;width:100%;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid #cbd5e1;box-sizing:border-box" />
+        <input type="password" name="pass" placeholder="Senha" required style="display:block;width:100%;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid #cbd5e1;box-sizing:border-box" />
+        <button type="submit">Entrar</button>
+      </form>`
+    )
+  );
+});
+
+app.post('/inbox/login', (req, res) => {
+  const { user, pass } = req.body || {};
+  if (user === INBOX_USER && pass === INBOX_PASSWORD) {
+    res.setHeader(
+      'Set-Cookie',
+      `${COOKIE_NAME}=${INBOX_TOKEN}; HttpOnly; Path=/inbox; Max-Age=${60 * 60 * 24 * 7}`
+    );
+    return res.redirect('/inbox');
+  }
+  res.status(401).send(
+    layout(
+      'Entrar — Caixa de entrada 6Tem',
+      `<h1>Entrar</h1><p>Usuário ou senha incorretos.</p><p><a href="/inbox/login">Tentar novamente</a></p>`
+    )
+  );
+});
+
+function inboxAuth(req, res, next) {
+  if (getCookie(req, COOKIE_NAME) === INBOX_TOKEN) {
+    return next();
+  }
+  return res.redirect('/inbox/login');
+}
+
+app.use('/inbox', inboxAuth);
 
 // Lista de conversas
 app.get('/inbox', (_req, res) => {
@@ -259,14 +299,6 @@ app.post('/inbox/:phone/toggle', (req, res) => {
 
 app.get('/', (_req, res) => {
   res.send('Bot do Método 6Tem está no ar. Caixa de entrada em /inbox.');
-});
-
-// Rota de teste temporária para diagnóstico
-app.get('/inboxtest', (_req, res) => {
-  res.send('inbox test ok');
-});
-app.get('/inbox-diag', (_req, res) => {
-  res.send('inbox diag ok');
 });
 
 app.listen(PORT, () => {
