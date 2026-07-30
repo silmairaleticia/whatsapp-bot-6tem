@@ -1,0 +1,16 @@
+{
+  "name": "whatsapp-bot-6tem",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bot de atendimento no WhatsApp (Meta Cloud API) com IA (Claude) para responder dúvidas sobre o Método 6Tem",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-basic-auth": "^1.2.1",
+    "@anthropic-ai/sdk": "^0.32.1",
+    "dotenv": "^16.4.5"
+  }
+}
