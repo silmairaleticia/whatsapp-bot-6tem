@@ -140,7 +140,8 @@ function inboxAuth(req, res, next) {
   return res.status(401).send('Autenticação necessária.');
 }
 
-app.use('/inbox', inboxAuth);
+// TEMP DIAGNOSTIC: auth desativada para testar se o problema é a própria rota /inbox
+// app.use('/inbox', inboxAuth);
 
 function escapeHtml(str = '') {
   return str
