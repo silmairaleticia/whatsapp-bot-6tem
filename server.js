@@ -1,6 +1,5 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import basicAuth from 'express-basic-auth';
 import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT } from './knowledgeBase.js';
 import {
@@ -122,14 +121,26 @@ async function sendWhatsAppMessage(to, body) {
 // ───────────────────────── CAIXA DE ENTRADA (painel manual) ─────────────────────────
 // Protegida por usuário/senha (defina INBOX_USER e INBOX_PASSWORD no .env).
 
-app.use(
-  '/inbox',
-  basicAuth({
-    users: { [INBOX_USER]: INBOX_PASSWORD },
-    challenge: true,
-    realm: 'Caixa de entrada 6Tem',
-  })
-);
+function inboxAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const [scheme, encoded] = authHeader.split(' ');
+
+  if (scheme === 'Basic' && encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString('utf-8');
+    const sepIndex = decoded.indexOf(':');
+    const user = decoded.slice(0, sepIndex);
+    const pass = decoded.slice(sepIndex + 1);
+
+    if (user === INBOX_USER && pass === INBOX_PASSWORD) {
+      return next();
+    }
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="Caixa de entrada 6Tem"');
+  return res.status(401).send('Autenticação necessária.');
+}
+
+app.use('/inbox', inboxAuth);
 
 function escapeHtml(str = '') {
   return str
