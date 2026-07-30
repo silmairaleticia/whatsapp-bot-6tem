@@ -179,22 +179,6 @@ function getCookie(req, name) {
   return null;
 }
 
-// TEMP DIAGNOSTIC: remover depois de resolver o problema de login
-app.get('/inbox/debug', (_req, res) => {
-  const u = INBOX_USER || '';
-  const p = INBOX_PASSWORD || '';
-  res.json({
-    userLen: u.length,
-    userJSON: JSON.stringify(u),
-    passLen: p.length,
-    passJSON: JSON.stringify(p),
-  });
-});
-
-app.post('/inbox/debug', (req, res) => {
-  res.json({ body: req.body, contentType: req.headers['content-type'] });
-});
-
 app.get('/inbox/login', (_req, res) => {
   res.send(
     layout(
@@ -228,6 +212,11 @@ app.post('/inbox/login', (req, res) => {
   );
 });
 
+app.post('/inbox/logout', (_req, res) => {
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/inbox; Max-Age=0`);
+  res.redirect('/inbox/login');
+});
+
 function inboxAuth(req, res, next) {
   if (getCookie(req, COOKIE_NAME) === INBOX_TOKEN) {
     return next();
@@ -256,7 +245,10 @@ app.get('/inbox', (_req, res) => {
   res.send(
     layout(
       'Caixa de entrada — Método 6Tem',
-      `<h1>Conversas</h1>${items || '<p>Nenhuma conversa ainda.</p>'}`
+      `<h1>Conversas</h1>${items || '<p>Nenhuma conversa ainda.</p>'}
+      <form method="POST" action="/inbox/logout" style="margin-top:24px">
+        <button type="submit" class="secondary">Sair</button>
+      </form>`
     )
   );
 });
