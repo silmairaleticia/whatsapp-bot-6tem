@@ -195,7 +195,9 @@ app.get('/inbox/login', (_req, res) => {
 
 app.post('/inbox/login', (req, res) => {
   const { user, pass } = req.body || {};
-  if (user === INBOX_USER && pass === INBOX_PASSWORD) {
+  const userOk = (user || '').trim() === (INBOX_USER || '').trim();
+  const passOk = (pass || '').trim() === (INBOX_PASSWORD || '').trim();
+  if (userOk && passOk) {
     res.setHeader(
       'Set-Cookie',
       `${COOKIE_NAME}=${INBOX_TOKEN}; HttpOnly; Path=/inbox; Max-Age=${60 * 60 * 24 * 7}`
