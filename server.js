@@ -262,6 +262,14 @@ app.get('/', (_req, res) => {
   res.send('Bot do Método 6Tem está no ar. Caixa de entrada em /inbox.');
 });
 
+// Rota de teste temporária para diagnóstico
+app.get('/inboxtest', (_req, res) => {
+  res.send('inbox test ok');
+});
+app.get('/inbox-diag', (_req, res) => {
+  res.send('inbox diag ok');
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
