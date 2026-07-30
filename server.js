@@ -179,6 +179,22 @@ function getCookie(req, name) {
   return null;
 }
 
+// TEMP DIAGNOSTIC: remover depois de resolver o problema de login
+app.get('/inbox/debug', (_req, res) => {
+  const u = INBOX_USER || '';
+  const p = INBOX_PASSWORD || '';
+  res.json({
+    userLen: u.length,
+    userJSON: JSON.stringify(u),
+    passLen: p.length,
+    passJSON: JSON.stringify(p),
+  });
+});
+
+app.post('/inbox/debug', (req, res) => {
+  res.json({ body: req.body, contentType: req.headers['content-type'] });
+});
+
 app.get('/inbox/login', (_req, res) => {
   res.send(
     layout(
