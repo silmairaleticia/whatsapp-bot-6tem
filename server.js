@@ -177,6 +177,7 @@ function extractKiwifyEvent(body = {}) {
     customer.first_name ||
     customer.name ||
     body.customer_name ||
+    body.name ||
     '';
 
   const phone =
