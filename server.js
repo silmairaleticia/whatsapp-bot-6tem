@@ -21,8 +21,13 @@ const {
   ANTHROPIC_API_KEY,
   INBOX_USER = 'admin',
   INBOX_PASSWORD = 'troque-esta-senha',
+  KIWIFY_WEBHOOK_TOKEN,
   PORT = 3000,
 } = process.env;
+
+if (!KIWIFY_WEBHOOK_TOKEN) {
+  console.warn('Aviso: KIWIFY_WEBHOOK_TOKEN não configurado — o webhook da Kiwify vai aceitar chamadas sem checar token (defina essa variável assim que criar o webhook na Kiwify).');
+}
 
 if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_NUMBER_ID || !VERIFY_TOKEN || !ANTHROPIC_API_KEY) {
   console.warn('Aviso: alguma variável de ambiente está faltando. Confira o arquivo .env.');
@@ -118,6 +123,136 @@ async function sendWhatsAppMessage(to, body) {
     console.error('Erro ao enviar mensagem pelo WhatsApp:', response.status, errorText);
   }
 }
+
+// ───────────────────────── WEBHOOK (Kiwify — pós-venda / carrinho abandonado) ─────────────────────────
+//
+// Configure em: Kiwify → Apps → Webhooks → Criar Webhook
+//   URL: https://SEU-APP.onrender.com/webhook/kiwify?token=SEU_KIWIFY_WEBHOOK_TOKEN
+//   Eventos: "Compra aprovada" e "Carrinho abandonado"
+//   (defina KIWIFY_WEBHOOK_TOKEN no Render com um valor secreto de sua escolha,
+//    e use o MESMO valor na URL do webhook lá na Kiwify — isso evita que qualquer
+//    pessoa na internet chame essa rota e mande mensagem em nome do seu número)
+//
+// IMPORTANTE — janela de 24h do WhatsApp: essas mensagens são iniciadas pela empresa
+// (a pessoa não mandou "oi" primeiro). O envio abaixo usa texto livre, que só é
+// entregue de forma garantida se esse número já tiver uma conversa aberta com o bot
+// nas últimas 24h (ex.: veio de um anúncio de Clique-para-WhatsApp e já mandou msg).
+// Para clientes que compraram direto pela página de vendas (sem nunca ter mandado
+// msg pro bot), a Meta pode bloquear o envio — nesse caso a solução é criar um
+// modelo (template) categoria "Utilidade" aprovado pela Meta. Posso te ajudar a
+// criar esse template depois; por enquanto o texto livre já cobre quem veio do
+// WhatsApp (anúncios, ou quem já conversou antes de comprar).
+//
+// A Kiwify pode mudar levemente os nomes dos campos do payload. Por segurança,
+// o código abaixo tenta vários caminhos possíveis E sempre loga o payload cru,
+// pra gente conferir nos logs do Render depois de um "Testar Webhook" real.
+
+function normalizePhone(raw) {
+  if (!raw) return null;
+  let digits = String(raw).replace(/\D/g, '');
+  if (!digits) return null;
+  digits = digits.replace(/^0+/, '');
+  // já tem código do país (55) + DDD + número (12 ou 13 dígitos)
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    return digits;
+  }
+  // só DDD + número (10 ou 11 dígitos) — adiciona o 55
+  if (digits.length === 10 || digits.length === 11) {
+    return `55${digits}`;
+  }
+  return digits;
+}
+
+function extractKiwifyEvent(body = {}) {
+  const eventType =
+    body.webhook_event_type ||
+    body.order_status ||
+    body.event ||
+    body.status ||
+    '';
+
+  const customer = body.Customer || body.customer || {};
+  const name =
+    customer.full_name ||
+    customer.first_name ||
+    customer.name ||
+    body.customer_name ||
+    '';
+
+  const phone =
+    customer.mobile ||
+    customer.phone_number ||
+    customer.phone ||
+    customer.CustomerPhoneNumber ||
+    body.customer_phone ||
+    body.phone ||
+    '';
+
+  return { eventType: String(eventType).toLowerCase(), name, phone };
+}
+
+function isApprovedPurchase(eventType) {
+  return ['compra_aprovada', 'order_approved', 'paid', 'approved'].some((k) => eventType.includes(k));
+}
+
+function isAbandonedCart(eventType) {
+  return ['carrinho_abandonado', 'abandoned_cart', 'abandoned'].some((k) => eventType.includes(k));
+}
+
+function buildPurchaseMessage(firstName) {
+  const hello = firstName ? `Oi, ${firstName}! ` : 'Oi! ';
+  return (
+    `${hello}Sua compra do Método 6Tem foi aprovada 🎉\n\n` +
+    `O acesso chega no seu e-mail (confira também a caixa de spam). Qualquer dúvida pra acessar o conteúdo ou sobre os módulos, pode falar comigo aqui mesmo que eu te ajudo.`
+  );
+}
+
+function buildAbandonedCartMessage(firstName) {
+  const hello = firstName ? `Oi, ${firstName}! ` : 'Oi! ';
+  return (
+    `${hello}vi que você chegou a iniciar a compra do Método 6Tem e não finalizou.\n\n` +
+    `Ficou alguma dúvida? É pagamento único de R$97, acesso vitalício, e garantia de 7 dias — se não for pra você, devolvemos o valor. Se quiser, me conta o que travou que eu te ajudo a decidir.`
+  );
+}
+
+app.post('/webhook/kiwify', async (req, res) => {
+  // Responde rápido pra Kiwify não reenviar o mesmo evento
+  res.sendStatus(200);
+
+  try {
+    if (KIWIFY_WEBHOOK_TOKEN && req.query.token !== KIWIFY_WEBHOOK_TOKEN) {
+      console.warn('Webhook Kiwify: token ausente ou inválido, ignorando chamada.');
+      return;
+    }
+
+    console.log('Webhook Kiwify recebido:', JSON.stringify(req.body));
+
+    const { eventType, name, phone } = extractKiwifyEvent(req.body);
+    const to = normalizePhone(phone);
+
+    if (!to) {
+      console.warn('Webhook Kiwify: não encontrei telefone no payload, nada foi enviado.');
+      return;
+    }
+
+    const firstName = (name || '').trim().split(' ')[0] || '';
+    let message = null;
+
+    if (isApprovedPurchase(eventType)) {
+      message = buildPurchaseMessage(firstName);
+    } else if (isAbandonedCart(eventType)) {
+      message = buildAbandonedCartMessage(firstName);
+    } else {
+      console.log(`Webhook Kiwify: evento "${eventType}" recebido, nenhuma ação configurada pra ele.`);
+      return;
+    }
+
+    await sendWhatsAppMessage(to, message);
+    addMessage(to, 'bot', message);
+  } catch (err) {
+    console.error('Erro ao processar webhook da Kiwify:', err);
+  }
+});
 
 // ───────────────────────── CAIXA DE ENTRADA (painel manual) ─────────────────────────
 // Protegida por usuário/senha (defina INBOX_USER e INBOX_PASSWORD no .env).
